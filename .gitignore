@@ -5,6 +5,8 @@ __pycache__/
 node_modules/
 .next/
 *.zip
+.latentcode
+.opencode
 
 
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.

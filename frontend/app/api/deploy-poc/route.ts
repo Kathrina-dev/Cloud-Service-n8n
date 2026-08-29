@@ -1,22 +1,14 @@
 import { EC2Client, RunInstancesCommand, DescribeImagesCommand } from "@aws-sdk/client-ec2";
-import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
 import { S3Client, ListBucketsCommand } from "@aws-sdk/client-s3";
+import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
 import { NextResponse } from "next/server";
 
 export async function POST() {
   try {
     const region = process.env.AWS_REGION || "us-east-1";
     const ec2Client = new EC2Client({ region });
-    const stsClient = new STSClient({ region });
     const s3Client = new S3Client({ region });
-
-    const repoName = process.env.AWS_ECR_REPO_NAME;
-    if (!repoName) {
-      return NextResponse.json(
-        { error: "AWS_ECR_REPO_NAME environment variable is not set." },
-        { status: 400 }
-      );
-    }
+    const secretsClient = new SecretsManagerClient({ region });
 
     let imageId = process.env.AWS_AMI_ID;
 
@@ -44,17 +36,42 @@ export async function POST() {
       );
     }
 
-    // Get the AWS Account ID dynamically for the ECR URI
-    const identityResponse = await stsClient.send(new GetCallerIdentityCommand({}));
-    const accountId = identityResponse.Account;
-    const ecrUri = `${accountId}.dkr.ecr.${region}.amazonaws.com`;
-    const imageTag = `${ecrUri}/${repoName}:latest`;
+    const imageTag = "n8nio/n8n:latest";
 
-    // Fetch RDS config
-    const rdsDbName = process.env.AWS_RDS_DB_NAME || "n8n";
-    const rdsUsername = process.env.AWS_RDS_USERNAME || "postgres";
-    const rdsPassword = process.env.AWS_RDS_PASSWORD || "";
-    const rdsHost = process.env.AWS_RDS_HOST || "";
+    // Fetch RDS config from Secrets Manager
+    const secretName = process.env.AWS_SECRET_NAME || "n8n/prod/db-credentials";
+    let rdsDbName = "";
+    let rdsUsername = "";
+    let rdsPassword = "";
+    let rdsHost = "";
+
+    try {
+      console.log(`Fetching database credentials from Secrets Manager: ${secretName}`);
+      const secretCommand = new GetSecretValueCommand({ SecretId: secretName });
+      const secretResponse = await secretsClient.send(secretCommand);
+      
+      if (secretResponse.SecretString) {
+        const secretPayload = JSON.parse(secretResponse.SecretString);
+        rdsDbName = secretPayload.dbname || "";
+        rdsUsername = secretPayload.username || "";
+        rdsPassword = secretPayload.password || "";
+        rdsHost = secretPayload.host || "";
+      }
+    } catch (secretError) {
+      console.error("Failed to fetch database credentials from Secrets Manager. Falling back to local .env (Not recommended for production)", secretError);
+      // Fallback to .env in case the secret hasn't been created yet or fails
+      rdsDbName = process.env.AWS_RDS_DB_NAME || "n8n";
+      rdsUsername = process.env.AWS_RDS_USERNAME || "postgres";
+      rdsPassword = process.env.AWS_RDS_PASSWORD || "";
+      rdsHost = process.env.AWS_RDS_HOST || "";
+    }
+
+    if (!rdsPassword || !rdsHost) {
+      return NextResponse.json(
+        { error: "Missing database credentials. Please run 'Store Secrets' first or ensure local .env is populated." },
+        { status: 500 }
+      );
+    }
 
     // Dynamically find the S3 backup bucket
     let s3BucketName = "";
@@ -82,8 +99,8 @@ yum install -y docker
 systemctl start docker
 systemctl enable docker
 
-# Login to ECR and pull the image
-aws ecr get-login-password --region ${region} | docker login --username AWS --password-stdin ${ecrUri}
+# Pull the official n8n image directly from Docker Hub
+docker pull n8nio/n8n:latest
 
 # Run the n8n container with postgres database variables mapped to port 80
 docker run -d -p 80:5678 \\
@@ -128,7 +145,7 @@ docker run -d -p 80:5678 \\
     }
 
     return NextResponse.json({
-      message: "EC2 instance deployed successfully. It will boot and pull the ECR image shortly.",
+      message: "EC2 instance deployed successfully. It will boot and pull the n8n image shortly.",
       instanceId,
     });
   } catch (error: unknown) {

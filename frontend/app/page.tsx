@@ -4,9 +4,9 @@ import { useState } from "react";
 
 export default function Home() {
   const [loading, setLoading] = useState(false);
-  const [pushing, setPushing] = useState(false);
   const [deployingRDS, setDeployingRDS] = useState(false);
   const [setupS3, setSetupS3] = useState(false);
+  const [setupSecrets, setSetupSecrets] = useState(false);
 
   const handleDeploy = async () => {
     setLoading(true);
@@ -31,29 +31,6 @@ export default function Home() {
       alert(`Deployment failed: ${errorMessage}`);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handlePushECR = async () => {
-    setPushing(true);
-    try {
-      const response = await fetch("/api/push-ecr", {
-        method: "POST",
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to push image to ECR");
-      }
-
-      alert(`Image pushed successfully! Tag: ${data.imageTag}`);
-    } catch (error: unknown) {
-      const errorMessage =
-        error instanceof Error ? error.message : "An unknown error occurred";
-      alert(`Push failed: ${errorMessage}`);
-    } finally {
-      setPushing(false);
     }
   };
 
@@ -103,27 +80,42 @@ export default function Home() {
     }
   };
 
+  const handleSetupSecrets = async () => {
+    setSetupSecrets(true);
+    try {
+      const response = await fetch("/api/setup-secrets", {
+        method: "POST",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to manage secrets");
+      }
+
+      alert(`Secrets stored successfully! Secret Name: ${data.secretName}`);
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unknown error occurred";
+      alert(`Secrets Setup failed: ${errorMessage}`);
+    } finally {
+      setSetupSecrets(false);
+    }
+  };
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen gap-4">
       <button
         onClick={handleDeploy}
-        disabled={loading || pushing || deployingRDS || setupS3}
+        disabled={loading || deployingRDS || setupS3 || setupSecrets}
         className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {loading ? "Deploying..." : "Deploy EC2"}
       </button>
-
-      <button
-        onClick={handlePushECR}
-        disabled={loading || pushing || deployingRDS || setupS3}
-        className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {pushing ? "Pushing to ECR..." : "Push to ECR"}
-      </button>
       
       <button
         onClick={handleDeployRDS}
-        disabled={loading || pushing || deployingRDS || setupS3}
+        disabled={loading || deployingRDS || setupS3 || setupSecrets}
         className="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {deployingRDS ? "Deploying RDS..." : "Deploy RDS"}
@@ -131,10 +123,18 @@ export default function Home() {
 
       <button
         onClick={handleSetupS3}
-        disabled={loading || pushing || deployingRDS || setupS3}
+        disabled={loading || deployingRDS || setupS3 || setupSecrets}
         className="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {setupS3 ? "Creating S3 Bucket..." : "Create S3 Bucket"}
+      </button>
+
+      <button
+        onClick={handleSetupSecrets}
+        disabled={loading || deployingRDS || setupS3 || setupSecrets}
+        className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {setupSecrets ? "Storing Secrets..." : "Store Secrets"}
       </button>
     </div>
   );

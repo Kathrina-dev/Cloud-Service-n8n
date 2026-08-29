@@ -6,6 +6,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [pushing, setPushing] = useState(false);
   const [deployingRDS, setDeployingRDS] = useState(false);
+  const [setupS3, setSetupS3] = useState(false);
 
   const handleDeploy = async () => {
     setLoading(true);
@@ -79,11 +80,34 @@ export default function Home() {
     }
   };
 
+  const handleSetupS3 = async () => {
+    setSetupS3(true);
+    try {
+      const response = await fetch("/api/setup-s3", {
+        method: "POST",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to create S3 bucket");
+      }
+
+      alert(`S3 bucket created successfully! Bucket Name: ${data.bucketName}`);
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unknown error occurred";
+      alert(`S3 Setup failed: ${errorMessage}`);
+    } finally {
+      setSetupS3(false);
+    }
+  };
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen gap-4">
       <button
         onClick={handleDeploy}
-        disabled={loading || pushing || deployingRDS}
+        disabled={loading || pushing || deployingRDS || setupS3}
         className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {loading ? "Deploying..." : "Deploy EC2"}
@@ -91,7 +115,7 @@ export default function Home() {
 
       <button
         onClick={handlePushECR}
-        disabled={loading || pushing || deployingRDS}
+        disabled={loading || pushing || deployingRDS || setupS3}
         className="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {pushing ? "Pushing to ECR..." : "Push to ECR"}
@@ -99,10 +123,18 @@ export default function Home() {
       
       <button
         onClick={handleDeployRDS}
-        disabled={loading || pushing || deployingRDS}
+        disabled={loading || pushing || deployingRDS || setupS3}
         className="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {deployingRDS ? "Deploying RDS..." : "Deploy RDS"}
+      </button>
+
+      <button
+        onClick={handleSetupS3}
+        disabled={loading || pushing || deployingRDS || setupS3}
+        className="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {setupS3 ? "Creating S3 Bucket..." : "Create S3 Bucket"}
       </button>
     </div>
   );

@@ -1,5 +1,6 @@
 import { EC2Client, RunInstancesCommand, DescribeImagesCommand } from "@aws-sdk/client-ec2";
 import { STSClient, GetCallerIdentityCommand } from "@aws-sdk/client-sts";
+import { S3Client, ListBucketsCommand } from "@aws-sdk/client-s3";
 import { NextResponse } from "next/server";
 
 export async function POST() {
@@ -7,6 +8,7 @@ export async function POST() {
     const region = process.env.AWS_REGION || "us-east-1";
     const ec2Client = new EC2Client({ region });
     const stsClient = new STSClient({ region });
+    const s3Client = new S3Client({ region });
 
     const repoName = process.env.AWS_ECR_REPO_NAME;
     if (!repoName) {
@@ -54,6 +56,25 @@ export async function POST() {
     const rdsPassword = process.env.AWS_RDS_PASSWORD || "";
     const rdsHost = process.env.AWS_RDS_HOST || "";
 
+    // Dynamically find the S3 backup bucket
+    let s3BucketName = "";
+    try {
+      const s3Prefix = process.env.S3_BUCKET_PREFIX || "n8n-backups-";
+      const { Buckets } = await s3Client.send(new ListBucketsCommand({}));
+      if (Buckets && Buckets.length > 0) {
+        // Find buckets matching the prefix, sort by creation date (newest first)
+        const matchedBuckets = Buckets.filter(b => b.Name?.startsWith(s3Prefix))
+          .sort((a, b) => (b.CreationDate?.getTime() || 0) - (a.CreationDate?.getTime() || 0));
+        
+        if (matchedBuckets.length > 0) {
+          s3BucketName = matchedBuckets[0].Name || "";
+          console.log(`Found S3 bucket for n8n: ${s3BucketName}`);
+        }
+      }
+    } catch (s3Error) {
+      console.warn("Could not list S3 buckets. n8n will start without S3 backup integration.", s3Error);
+    }
+
     // Create the bash script to run on instance startup
     const userData = `#!/bin/bash
 yum update -y
@@ -72,6 +93,7 @@ docker run -d -p 80:5678 \\
   -e DB_POSTGRESDB_PORT=5432 \\
   -e DB_POSTGRESDB_USER="${rdsUsername}" \\
   -e DB_POSTGRESDB_PASSWORD="${rdsPassword}" \\
+  ${s3BucketName ? `-e N8N_BACKUP_S3_BUCKET="${s3BucketName}" -e AWS_REGION="${region}" \\` : ''}
   ${imageTag}
 `;
     const encodedUserData = Buffer.from(userData).toString("base64");

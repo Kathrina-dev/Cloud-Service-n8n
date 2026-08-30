@@ -3,12 +3,46 @@ import { S3Client, ListBucketsCommand } from "@aws-sdk/client-s3";
 import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
 import { NextResponse } from "next/server";
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
+    // 1. EXTRACT DATA FROM CANVAS ENGINE
+    const body = await request.json().catch(() => ({}));
+    let { privateSubnetId } = body;
+
     const region = process.env.AWS_REGION || "us-east-1";
     const ec2Client = new EC2Client({ region });
     const s3Client = new S3Client({ region });
     const secretsClient = new SecretsManagerClient({ region });
+
+    // AUTOMATED FALLBACK: If canvas engine state is stale/missing, search AWS for the subnet directly
+    if (!privateSubnetId) {
+      console.warn("privateSubnetId missing from canvas execution state. Initiating automated discovery lookup...");
+      try {
+        const { DescribeSubnetsCommand } = await import("@aws-sdk/client-ec2");
+        const subnetsResponse = await ec2Client.send(new DescribeSubnetsCommand({
+          Filters: [
+            { Name: "tag:Name", Values: ["Private-Subnet-A", "*private*", "*Private*"] },
+            { Name: "state", Values: ["available"] }
+          ]
+        }));
+        
+        // Auto-select the first available custom private subnet found
+        privateSubnetId = subnetsResponse.Subnets?.[0]?.SubnetId;
+        if (privateSubnetId) {
+          console.log(`Successfully healed missing state! Using discovered Subnet ID: ${privateSubnetId}`);
+        }
+      } catch (lookupError) {
+        console.error("Automated target subnet discovery failed:", lookupError);
+      }
+    }
+
+    // Hard-stop only if both context payload and fallback discovery yield nothing
+    if (!privateSubnetId) {
+      return NextResponse.json(
+        { error: "Missing required 'privateSubnetId'. Ensure your VPC node has successfully provisioned network resources or that canvas node dependencies are linked." },
+        { status: 400 }
+      );
+    }
 
     let imageId = process.env.AWS_AMI_ID;
 
@@ -58,8 +92,7 @@ export async function POST() {
         rdsHost = secretPayload.host || "";
       }
     } catch (secretError) {
-      console.error("Failed to fetch database credentials from Secrets Manager. Falling back to local .env (Not recommended for production)", secretError);
-      // Fallback to .env in case the secret hasn't been created yet or fails
+      console.error("Failed to fetch database credentials from Secrets Manager. Falling back to local .env", secretError);
       rdsDbName = process.env.AWS_RDS_DB_NAME || "n8n";
       rdsUsername = process.env.AWS_RDS_USERNAME || "postgres";
       rdsPassword = process.env.AWS_RDS_PASSWORD || "";
@@ -79,7 +112,6 @@ export async function POST() {
       const s3Prefix = process.env.S3_BUCKET_PREFIX || "n8n-backups-";
       const { Buckets } = await s3Client.send(new ListBucketsCommand({}));
       if (Buckets && Buckets.length > 0) {
-        // Find buckets matching the prefix, sort by creation date (newest first)
         const matchedBuckets = Buckets.filter(b => b.Name?.startsWith(s3Prefix))
           .sort((a, b) => (b.CreationDate?.getTime() || 0) - (a.CreationDate?.getTime() || 0));
         
@@ -99,10 +131,10 @@ yum install -y docker
 systemctl start docker
 systemctl enable docker
 
-# Pull the official n8n image directly from Docker Hub
-docker pull n8nio/n8n:latest
+# Pull the image version dynamically
+docker pull ${imageTag}
 
-# Run the n8n container with postgres database variables mapped to port 80
+# Run the container mapped to port 80
 docker run -d -p 80:5678 \\
   -e DB_TYPE=postgresdb \\
   -e DB_POSTGRESDB_DATABASE="${rdsDbName}" \\
@@ -115,6 +147,7 @@ docker run -d -p 80:5678 \\
 `;
     const encodedUserData = Buffer.from(userData).toString("base64");
 
+    // 2. LAUNCH INSIDE PRIVATE NETWORK CUSTOM STRUCTURE
     const command = new RunInstancesCommand({
       ImageId: imageId,
       InstanceType: "t2.micro",
@@ -122,19 +155,21 @@ docker run -d -p 80:5678 \\
       MaxCount: 1,
       UserData: encodedUserData,
       IamInstanceProfile: {
-        Name: "LabInstanceProfile" // Required for the instance to run `aws ecr` commands
+        Name: "LabInstanceProfile"
       },
-      // Give it a public IP to easily view the web server
+      // Explicit interface array mapping to assign specific subnets safely
       NetworkInterfaces: [
         {
           DeviceIndex: 0,
-          AssociatePublicIpAddress: true,
-          // Note: Needs a default subnet if omitted, or a specific subnet ID if strictly controlled
+          SubnetId: privateSubnetId,
+          AssociatePublicIpAddress: false, // Explicit isolation boundary (No direct public Internet IP)
         }
       ]
     });
 
     const response = await ec2Client.send(command);
+    
+    // SAFE PARSING: Extracting single instance details for individual node updates
     const instanceId = response.Instances?.[0]?.InstanceId;
 
     if (!instanceId) {
@@ -145,7 +180,7 @@ docker run -d -p 80:5678 \\
     }
 
     return NextResponse.json({
-      message: "EC2 instance deployed successfully. It will boot and pull the n8n image shortly.",
+      message: "EC2 instance deployed successfully within isolated private subnet layer.",
       instanceId,
     });
   } catch (error: unknown) {
@@ -157,5 +192,3 @@ docker run -d -p 80:5678 \\
     );
   }
 }
-
-

@@ -41,7 +41,8 @@ export async function POST() {
       await secretsClient.send(createCommand);
       isCreated = true;
       console.log(`Successfully created new secret: ${secretName}`);
-    } catch (error: any) {
+    } catch (err: unknown) {
+      const error = err as Error;
       // If the secret already exists, we catch the ResourceExistsException and update it instead
       if (error.name === 'ResourceExistsException') {
         console.log(`Secret ${secretName} already exists. Updating its value...`);
@@ -64,7 +65,8 @@ export async function POST() {
       secretName: secretName 
     });
 
-  } catch (error: any) {
+  } catch (err: unknown) {
+    const error = err as Error;
     console.error('Error managing AWS Secret:', error);
     return NextResponse.json(
       { success: false, error: error.message || 'Failed to manage AWS Secret' },

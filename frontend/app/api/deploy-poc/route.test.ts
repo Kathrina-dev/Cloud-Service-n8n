@@ -3,13 +3,14 @@ import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 vi.mock("@aws-sdk/client-ec2", () => {
   return {
     EC2Client: class {
-      send(command: any) {
-        if (command.constructor.name === "DescribeImagesCommand") {
+      send(command: unknown) {
+        const cmdName = (command as any)?.constructor?.name;
+        if (cmdName === "DescribeImagesCommand") {
           return Promise.resolve({
             Images: [{ ImageId: "ami-dynamic12345", CreationDate: "2024-01-01T00:00:00.000Z" }],
           });
         }
-        if (command.constructor.name === "RunInstancesCommand") {
+        if (cmdName === "RunInstancesCommand") {
           return Promise.resolve({
             Instances: [{ InstanceId: "i-0123456789abcdef0" }],
           });
@@ -18,10 +19,10 @@ vi.mock("@aws-sdk/client-ec2", () => {
       }
     },
     DescribeImagesCommand: class {
-      constructor(public input: any) {}
+      constructor(public input: unknown) {}
     },
     RunInstancesCommand: class {
-      constructor(public input: any) {}
+      constructor(public input: unknown) {}
     },
   };
 });

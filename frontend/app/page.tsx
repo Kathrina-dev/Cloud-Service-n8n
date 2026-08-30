@@ -119,6 +119,21 @@ export default function Home() {
   const [nodes, setNodes] = useState<Node<FlowNodeData>[]>(initialNodes);
   const [edges, setEdges] = useState<Edge[]>(initialEdges);
   const [loading, setLoading] = useState(false);
+  const [pushing, setPushing] = useState(false);
+  const [deployingRDS, setDeployingRDS] = useState(false);
+  const [setupS3, setSetupS3] = useState(false);
+  const [setupSecrets, setSetupSecrets] = useState(false);
+  const [requestingCert, setRequestingCert] = useState(false);
+  const [setupCW, setSetupCW] = useState(false);
+  
+  const [domainName, setDomainName] = useState("");
+  const [cwParams, setCwParams] = useState({
+    ec2InstanceId: "",
+    rdsIdentifier: "",
+    loadBalancerFullName: ""
+  });
+
+  const [dnsInstructions, setDnsInstructions] = useState<{name: string, type: string, value: string} | null>(null);
 
   const handleDeploy = async () => {
     setLoading(true);
@@ -195,6 +210,77 @@ export default function Home() {
       return [...currentNodes, newNode];
     });
   }, []);
+
+  const handleRequestCertificate = async () => {
+    if (!domainName) {
+      alert("Please enter a domain name");
+      return;
+    }
+    
+    setRequestingCert(true);
+    setDnsInstructions(null);
+    try {
+      const response = await fetch("/api/request-certificate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ domainName }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to request certificate");
+      }
+
+      if (data.dnsRecord) {
+        setDnsInstructions(data.dnsRecord);
+      } else {
+        alert(data.message);
+      }
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unknown error occurred";
+      alert(`Certificate request failed: ${errorMessage}`);
+    } finally {
+    setRequestingCert(false);
+    }
+  };
+
+  const handleSetupCloudWatch = async () => {
+    if (!cwParams.ec2InstanceId || !cwParams.rdsIdentifier || !cwParams.loadBalancerFullName) {
+      alert("Please enter EC2 Instance ID, RDS Identifier, and ALB Full Name.");
+      return;
+    }
+
+    setSetupCW(true);
+    try {
+      const response = await fetch("/api/setup-cloudwatch", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(cwParams),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to setup CloudWatch");
+      }
+
+      alert("CloudWatch Dashboard and Alarms created successfully!");
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unknown error occurred";
+      alert(`CloudWatch Setup failed: ${errorMessage}`);
+    } finally {
+      setSetupCW(false);
+    }
+  };
+
+  const isBusy = loading || pushing || deployingRDS || setupS3 || setupSecrets || requestingCert || setupCW;
 
   return (
     <div

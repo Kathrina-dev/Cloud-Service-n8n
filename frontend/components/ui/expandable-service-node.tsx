@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
-import { Handle, Position, type Connection, type NodeProps } from '@xyflow/react';
+import { Handle, Position, type Connection, type NodeProps, type Node } from '@xyflow/react';
 
 export type ExpandableServiceNodeSection = {
   title: string;
@@ -20,7 +20,7 @@ export type ExpandableServiceNodeData = {
   onHandleConnect?: (connection: Connection) => void;
 };
 
-export default function ExpandableServiceNode({ data }: NodeProps<ExpandableServiceNodeData>) {
+export default function ExpandableServiceNode({ data }: NodeProps<Node<ExpandableServiceNodeData>>) {
   const [isExpanded, setIsExpanded] = useState(false);
   const nodeRef = useRef<HTMLDivElement>(null);
 

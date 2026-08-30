@@ -25,7 +25,7 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import './globals.css';
-import Nodes from '../components/nodes';
+import Nodes, { nodePalette } from '../components/nodes';
 import ExpandableServiceNode, { type ExpandableServiceNodeData } from '../components/ui/expandable-service-node';
 import {
   type FlowNodeData,
@@ -119,12 +119,16 @@ export default function Home() {
   const [nodes, setNodes] = useState<Node<FlowNodeData>[]>(initialNodes);
   const [edges, setEdges] = useState<Edge[]>(initialEdges);
   const [loading, setLoading] = useState(false);
+  const [deployStatus, setDeployStatus] = useState<string | null>(null);
   const [pushing, setPushing] = useState(false);
   const [deployingRDS, setDeployingRDS] = useState(false);
   const [setupS3, setSetupS3] = useState(false);
   const [setupSecrets, setSetupSecrets] = useState(false);
   const [requestingCert, setRequestingCert] = useState(false);
   const [setupCW, setSetupCW] = useState(false);
+  
+  const [chatPrompt, setChatPrompt] = useState("");
+  const [isGeneratingGraph, setIsGeneratingGraph] = useState(false);
   
   const [domainName, setDomainName] = useState("");
   const [cwParams, setCwParams] = useState({
@@ -137,26 +141,51 @@ export default function Home() {
 
   const handleDeploy = async () => {
     setLoading(true);
+    setDeployStatus("Starting AI Orchestrator...");
     try {
-      const response = await fetch("/api/deploy-poc", {
+      const response = await fetch("/api/orchestrate", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nodes, edges }),
       });
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Failed to deploy instance");
+        throw new Error(data.error || "Failed to start orchestration");
       }
 
-      alert(`EC2 Instance deployed successfully! Instance ID: ${data.instanceId}`);
+      const jobId = data.jobId;
+      setDeployStatus("AI analyzing architecture...");
+
+      // Start polling
+      const pollInterval = setInterval(async () => {
+        try {
+          const statusRes = await fetch(`/api/status?jobId=${jobId}`);
+          const statusData = await statusRes.json();
+          
+          if (statusData.status) {
+            setDeployStatus(statusData.status);
+          }
+
+          if (statusData.isComplete) {
+            clearInterval(pollInterval);
+            setLoading(false);
+            if (statusData.error) {
+              alert(`Deployment failed: ${statusData.error}`);
+            } else {
+              alert("Cloud deployment completed successfully!");
+            }
+          }
+        } catch (err) {
+          console.error("Polling error", err);
+        }
+      }, 3000);
+
     } catch (error: unknown) {
-      const errorMessage =
-        error instanceof Error ? error.message : "An unknown error occurred";
+      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
       alert(`Deployment failed: ${errorMessage}`);
-    } finally {
       setLoading(false);
+      setDeployStatus(null);
     }
   };
 
@@ -280,6 +309,65 @@ export default function Home() {
     }
   };
 
+  const handleGraphChatSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatPrompt.trim()) return;
+
+    setIsGeneratingGraph(true);
+    try {
+      const response = await fetch('/api/chat-to-graph', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: chatPrompt, currentGraph: { nodes, edges } })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to generate graph');
+      
+      let nextNodeId = Math.max(0, ...nodes.map(n => parseInt(n.id) || 0));
+
+      const newNodesList = (data.newNodes || []).map((nn: any, index: number) => {
+        nextNodeId++;
+        const paletteItem = nodePalette.find(p => p.label === nn.label);
+        
+        return {
+          id: nn.id || String(nextNodeId),
+          type: paletteItem?.nodeType || 'expandableNode',
+          position: {
+            x: 100 + ((nodes.length + index) % 3) * 220,
+            y: 350 + Math.floor((nodes.length + index) / 3) * 170,
+          },
+          data: paletteItem?.nodeType === 'vpcNode' ? {
+            label: nn.logicalName || nn.label,
+            iconSrc: paletteItem?.iconSrc || '',
+            accentColor: paletteItem?.nodeColor || '#888',
+          } : {
+            label: nn.logicalName || nn.label,
+            iconSrc: paletteItem?.iconSrc || '',
+            accentColor: paletteItem?.nodeColor || '#888',
+            sections: getSectionsForNode(nn.label),
+          }
+        };
+      });
+
+      const newEdgesList = (data.newEdges || []).map((ne: any, index: number) => ({
+        id: `e-${Date.now()}-${index}`,
+        source: ne.source,
+        target: ne.target,
+        type: 'default',
+        animated: true,
+      }));
+
+      setNodes(prev => [...prev, ...newNodesList]);
+      setEdges(prev => [...prev, ...newEdgesList]);
+      setChatPrompt("");
+
+    } catch (error: any) {
+      alert(`Chat Error: ${error.message}`);
+    } finally {
+      setIsGeneratingGraph(false);
+    }
+  };
+
   const isBusy = loading || pushing || deployingRDS || setupS3 || setupSecrets || requestingCert || setupCW;
 
   return (
@@ -315,12 +403,40 @@ export default function Home() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                 </svg>
-                Deploying...
+                {deployStatus || "Deploying..."}
               </>
             ) : (
-              'Deploy EC2'
+              'Deploy Architecture'
             )}
           </button>
+        </Panel>
+        <Panel position="bottom-center" className="mb-4 w-[600px] max-w-[90vw]">
+          <form onSubmit={handleGraphChatSubmit} className="relative flex w-full items-center">
+            <input
+              type="text"
+              value={chatPrompt}
+              onChange={(e) => setChatPrompt(e.target.value)}
+              placeholder="E.g., Add an EC2 instance connected to an RDS database..."
+              disabled={isGeneratingGraph}
+              className="w-full rounded-2xl border border-white/20 bg-white/10 px-5 py-3.5 pr-12 text-sm text-white placeholder-white/50 backdrop-blur-xl focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/50 disabled:opacity-50 shadow-[0_12px_28px_rgba(0,0,0,0.35)]"
+            />
+            <button
+              type="submit"
+              disabled={isGeneratingGraph || !chatPrompt.trim()}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-xl bg-indigo-500/20 p-2 text-indigo-300 transition hover:bg-indigo-500/40 disabled:opacity-50 cursor-pointer"
+            >
+              {isGeneratingGraph ? (
+                <svg className="h-5 w-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              ) : (
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                </svg>
+              )}
+            </button>
+          </form>
         </Panel>
         <MiniMap
           className="!rounded-xl !border !border-white/30 !bg-white/10 !backdrop-blur-xl"

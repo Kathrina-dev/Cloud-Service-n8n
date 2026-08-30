@@ -6,7 +6,7 @@ type NodesProps = {
   onAddNode: (label: string, color: string, icon: string, iconSrc: string, nodeType: string) => void;
 };
 
-const nodePalette = [
+export const nodePalette = [
   {
     label: "ALB Load Balancer",
     nodeColor: "#8c50ff",

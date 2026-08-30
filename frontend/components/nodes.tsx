@@ -66,7 +66,7 @@ const nodePalette = [
 ];
 
 const Nodes = ({ onAddNode }: NodesProps) => {
-  
+
   return (
     <div className="flex max-w-[calc(100vw-2rem)] flex-nowrap items-stretch justify-start gap-2 overflow-x-auto rounded-2xl border border-white/25 bg-white/10 p-2 backdrop-blur-xl shadow-[0_14px_42px_rgba(0,0,0,0.35)]">
       {nodePalette.map((item) => (

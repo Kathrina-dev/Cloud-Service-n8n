@@ -53,7 +53,8 @@ export async function POST() {
       bucketName: bucketName 
     });
 
-  } catch (error: any) {
+  } catch (err: unknown) {
+    const error = err as Error;
     console.error('Error creating S3 bucket:', error);
     return NextResponse.json(
       { success: false, error: error.message || 'Failed to create S3 bucket' },

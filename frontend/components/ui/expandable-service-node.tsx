@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
-import { Handle, Position, type Connection, type NodeProps, type Node } from '@xyflow/react';
+import { Handle, Position, type Connection, type NodeProps, type Node, useReactFlow } from '@xyflow/react';
 
 export type ExpandableServiceNodeSection = {
   title: string;
@@ -20,9 +20,16 @@ export type ExpandableServiceNodeData = {
   onHandleConnect?: (connection: Connection) => void;
 };
 
-export default function ExpandableServiceNode({ data }: NodeProps<Node<ExpandableServiceNodeData>>) {
+export default function ExpandableServiceNode({ id, data }: NodeProps<Node<ExpandableServiceNodeData>>) {
   const [isExpanded, setIsExpanded] = useState(false);
   const nodeRef = useRef<HTMLDivElement>(null);
+  const { setNodes, setEdges } = useReactFlow();
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setNodes((nodes) => nodes.filter((n) => n.id !== id));
+    setEdges((edges) => edges.filter((edge) => edge.source !== id && edge.target !== id));
+  };
 
   useEffect(() => {
     const handleDocumentPointerDown = (event: PointerEvent) => {
@@ -41,9 +48,17 @@ export default function ExpandableServiceNode({ data }: NodeProps<Node<Expandabl
   return (
     <div
       ref={nodeRef}
-      className="relative min-w-[150px] rounded-2xl border border-white/30 bg-white/10 px-3 py-2 text-white backdrop-blur-xl shadow-[0_12px_28px_rgba(0,0,0,0.35)]"
+      className="group relative min-w-[150px] rounded-2xl border border-white/30 bg-white/10 px-3 py-2 text-white backdrop-blur-xl shadow-[0_12px_28px_rgba(0,0,0,0.35)]"
       style={{ boxShadow: `inset 0 0 0 1px ${data.accentColor}55, 0 12px 28px ${data.accentColor}35` }}
     >
+      <button 
+        onClick={handleDelete}
+        className="absolute -top-2 -right-2 bg-red-500/80 hover:bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity z-10 w-6 h-6 flex items-center justify-center text-xs shadow-md"
+        title="Delete Node"
+      >
+        ✕
+      </button>
+
       <Handle
         type="target"
         position={Position.Top}

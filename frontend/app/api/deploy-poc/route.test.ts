@@ -43,7 +43,11 @@ describe("POST /api/deploy-poc route handler", () => {
   it("dynamically resolves AMI ID when AWS_AMI_ID is not provided", async () => {
     delete process.env.AWS_AMI_ID;
 
-    const res = await POST();
+    const req = new Request("http://localhost/api/deploy-poc", {
+      method: "POST",
+      body: JSON.stringify({ privateSubnetId: "subnet-12345" }),
+    });
+    const res = await POST(req);
     const data = await res.json();
 
     expect(res.status).toBe(200);

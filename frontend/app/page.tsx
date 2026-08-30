@@ -22,6 +22,7 @@ import {
   Node,
   Edge,
   Position,
+  useReactFlow,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import './globals.css';
@@ -57,15 +58,31 @@ function AwsNode({ data }: NodeProps<Node<AwsNodeData>>) {
   );
 }
 
-function VpcNode({ data }: NodeProps<Node<VpcNodeData>>) {
+function VpcNode({ id, data }: NodeProps<Node<VpcNodeData>>) {
+  const { setNodes, setEdges } = useReactFlow();
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setNodes((nodes) => nodes.filter((n) => n.id !== id));
+    setEdges((edges) => edges.filter((edge) => edge.source !== id && edge.target !== id));
+  };
+
   return (
     <div
-      className="w-full h-full relative rounded-3xl border-2 border-dashed bg-[#0b1220]/60 p-4 text-white backdrop-blur-md shadow-[0_12px_28px_rgba(0,0,0,0.15)] flex flex-col gap-4"
+      className="group w-full h-full relative rounded-3xl border-2 border-dashed bg-[#0b1220]/60 p-4 text-white backdrop-blur-md shadow-[0_12px_28px_rgba(0,0,0,0.15)] flex flex-col gap-4"
       style={{
         borderColor: data.accentColor || '#7746d3',
         boxShadow: `inset 0 0 0 1px ${data.accentColor}33, 0 12px 28px ${data.accentColor}15`
       }}
     >
+      <button 
+        onClick={handleDelete}
+        className="absolute -top-3 -right-3 bg-red-500/80 hover:bg-red-500 text-white rounded-full p-2 opacity-0 group-hover:opacity-100 transition-opacity z-20 w-8 h-8 flex items-center justify-center shadow-lg cursor-pointer"
+        title="Delete VPC"
+      >
+        ✕
+      </button>
+
       <div className="flex items-center gap-3 border-b border-white/10 pb-3">
         <div
           className="flex h-8 w-8 items-center justify-center rounded-md border border-white/40 bg-white/20"
@@ -165,12 +182,6 @@ export default function Home() {
 
   const handleDeploy = async () => {
     setLoading(true);
-    setDeployStatus("Starting AI Orchestrator...");
-    try {
-      const response = await fetch("/api/orchestrate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nodes, edges }),
     setDeploymentLog([]);
     setShowLogModal(true);
 
@@ -219,40 +230,6 @@ export default function Home() {
         return isEC2;
       });
 
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to start orchestration");
-      }
-
-      const jobId = data.jobId;
-      setDeployStatus("AI analyzing architecture...");
-
-      // Start polling
-      const pollInterval = setInterval(async () => {
-        try {
-          const statusRes = await fetch(`/api/status?jobId=${jobId}`);
-          const statusData = await statusRes.json();
-          
-          if (statusData.status) {
-            setDeployStatus(statusData.status);
-          }
-
-          if (statusData.isComplete) {
-            clearInterval(pollInterval);
-            setLoading(false);
-            if (statusData.error) {
-              alert(`Deployment failed: ${statusData.error}`);
-            } else {
-              alert("Cloud deployment completed successfully!");
-            }
-          }
-        } catch (err) {
-          console.error("Polling error", err);
-        }
-      }, 3000);
-
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred";
-      alert(`Deployment failed: ${errorMessage}`);
       const albNodes = nodes.filter(n => {
         const isALB = n.type === 'expandableNode' && n.data.label.toLowerCase().includes('alb');
         if (vpcNode) {
@@ -299,6 +276,40 @@ export default function Home() {
         }
       } else {
         log("No ALBs found in Public Subnet.");
+      }
+
+      // Deploy RDS Databases
+      const rdsNodes = nodes.filter(n => n.type === 'expandableNode' && n.data.label.toLowerCase().includes('rds'));
+      if (rdsNodes.length > 0) {
+        log(`Phase 4: Deploying ${rdsNodes.length} RDS Database(s)...`);
+        for (let i = 0; i < rdsNodes.length; i++) {
+          const rdsNode = rdsNodes[i];
+          log(`Provisioning RDS Node "${rdsNode.data.label}" (${i + 1}/${rdsNodes.length})...`);
+
+          const rdsResponse = await fetch("/api/deploy-rds", { method: "POST" });
+          const rdsData = await rdsResponse.json();
+          if (!rdsResponse.ok) {
+            throw new Error(rdsData.error || `Failed to deploy RDS Node "${rdsNode.data.label}"`);
+          }
+          log(`✓ RDS Node "${rdsNode.data.label}" deployed successfully. DB Identifier: ${rdsData.dbInstanceIdentifier}`);
+        }
+      }
+
+      // Deploy S3 Buckets
+      const s3Nodes = nodes.filter(n => n.type === 'expandableNode' && n.data.label.toLowerCase().includes('s3'));
+      if (s3Nodes.length > 0) {
+        log(`Phase 5: Deploying ${s3Nodes.length} S3 Bucket(s)...`);
+        for (let i = 0; i < s3Nodes.length; i++) {
+          const s3Node = s3Nodes[i];
+          log(`Creating S3 Bucket "${s3Node.data.label}" (${i + 1}/${s3Nodes.length})...`);
+
+          const s3Response = await fetch("/api/setup-s3", { method: "POST" });
+          const s3Data = await s3Response.json();
+          if (!s3Response.ok) {
+            throw new Error(s3Data.error || `Failed to deploy S3 Node "${s3Node.data.label}"`);
+          }
+          log(`✓ S3 Bucket "${s3Node.data.label}" created successfully. Bucket Name: ${s3Data.bucketName}`);
+        }
       }
 
       log("🎉 Architecture deployment completed successfully!");
@@ -442,7 +453,7 @@ export default function Home() {
 
     setNodes((currentNodes) => {
       const nodeIndex = currentNodes.length + 1;
-      newNodeId = `${nodeIndex}`;
+      newNodeId = crypto.randomUUID();
 
       const newNode: Node<FlowNodeData> = {
         id: newNodeId,
@@ -563,14 +574,18 @@ export default function Home() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Failed to generate graph');
       
-      let nextNodeId = Math.max(0, ...nodes.map(n => parseInt(n.id) || 0));
+      const idMap: Record<string, string> = {};
 
       const newNodesList = (data.newNodes || []).map((nn: any, index: number) => {
-        nextNodeId++;
+        const generatedId = crypto.randomUUID();
+        if (nn.id) {
+          idMap[nn.id] = generatedId;
+        }
+
         const paletteItem = nodePalette.find(p => p.label === nn.label);
         
         return {
-          id: nn.id || String(nextNodeId),
+          id: generatedId,
           type: paletteItem?.nodeType || 'expandableNode',
           position: {
             x: 100 + ((nodes.length + index) % 3) * 220,
@@ -591,8 +606,8 @@ export default function Home() {
 
       const newEdgesList = (data.newEdges || []).map((ne: any, index: number) => ({
         id: `e-${Date.now()}-${index}`,
-        source: ne.source,
-        target: ne.target,
+        source: idMap[ne.source] || ne.source,
+        target: idMap[ne.target] || ne.target,
         type: 'default',
         animated: true,
       }));

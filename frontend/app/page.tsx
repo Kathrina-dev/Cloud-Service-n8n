@@ -1,142 +1,151 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from 'react';
+import Image from 'next/image';
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  MiniMap,
+  applyNodeChanges,
+  applyEdgeChanges,
+  Panel,
+  addEdge,
+  Handle,
+  Connection,
+  EdgeChange,
+  NodeChange,
+  OnNodesChange,
+  OnEdgesChange,
+  OnConnect,
+  NodeProps,
+  Node,
+  Edge,
+  Position,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+import './globals.css';
+import Nodes from '../components/nodes';
 
-export default function Home() {
-  const [loading, setLoading] = useState(false);
-  const [deployingRDS, setDeployingRDS] = useState(false);
-  const [setupS3, setSetupS3] = useState(false);
-  const [setupSecrets, setSetupSecrets] = useState(false);
+type AwsNodeData = {
+  label: string;
+  color: string;
+  icon: string;
+  iconSrc: string;
+};
 
-  const handleDeploy = async () => {
-    setLoading(true);
-    try {
-      const response = await fetch("/api/deploy-poc", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to deploy instance");
-      }
-
-      alert(`EC2 Instance deployed successfully! Instance ID: ${data.instanceId}`);
-    } catch (error: unknown) {
-      const errorMessage =
-        error instanceof Error ? error.message : "An unknown error occurred";
-      alert(`Deployment failed: ${errorMessage}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDeployRDS = async () => {
-    setDeployingRDS(true);
-    try {
-      const response = await fetch("/api/deploy-rds", {
-        method: "POST",
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to deploy RDS instance");
-      }
-
-      alert(`RDS instance is being provisioned! DB Identifier: ${data.dbInstanceIdentifier}`);
-    } catch (error: unknown) {
-      const errorMessage =
-        error instanceof Error ? error.message : "An unknown error occurred";
-      alert(`RDS Deployment failed: ${errorMessage}`);
-    } finally {
-      setDeployingRDS(false);
-    }
-  };
-
-  const handleSetupS3 = async () => {
-    setSetupS3(true);
-    try {
-      const response = await fetch("/api/setup-s3", {
-        method: "POST",
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to create S3 bucket");
-      }
-
-      alert(`S3 bucket created successfully! Bucket Name: ${data.bucketName}`);
-    } catch (error: unknown) {
-      const errorMessage =
-        error instanceof Error ? error.message : "An unknown error occurred";
-      alert(`S3 Setup failed: ${errorMessage}`);
-    } finally {
-      setSetupS3(false);
-    }
-  };
-
-  const handleSetupSecrets = async () => {
-    setSetupSecrets(true);
-    try {
-      const response = await fetch("/api/setup-secrets", {
-        method: "POST",
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to manage secrets");
-      }
-
-      alert(`Secrets stored successfully! Secret Name: ${data.secretName}`);
-    } catch (error: unknown) {
-      const errorMessage =
-        error instanceof Error ? error.message : "An unknown error occurred";
-      alert(`Secrets Setup failed: ${errorMessage}`);
-    } finally {
-      setSetupSecrets(false);
-    }
-  };
-
+function AwsNode({ data }: NodeProps<Node<AwsNodeData>>) {
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen gap-4">
-      <button
-        onClick={handleDeploy}
-        disabled={loading || deployingRDS || setupS3 || setupSecrets}
-        className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+    <>
+      <Handle type="target" position={Position.Top} className="!h-2 !w-2 !border !border-white/40 !bg-white/80" />
+      <div
+        className="min-w-[150px] rounded-2xl border border-white/30 bg-white/10 px-3 py-2 text-white backdrop-blur-xl shadow-[0_12px_28px_rgba(0,0,0,0.35)]"
+        style={{ boxShadow: `inset 0 0 0 1px ${data.color}55, 0 12px 28px ${data.color}35` }}
       >
-        {loading ? "Deploying..." : "Deploy EC2"}
-      </button>
-      
-      <button
-        onClick={handleDeployRDS}
-        disabled={loading || deployingRDS || setupS3 || setupSecrets}
-        className="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {deployingRDS ? "Deploying RDS..." : "Deploy RDS"}
-      </button>
-
-      <button
-        onClick={handleSetupS3}
-        disabled={loading || deployingRDS || setupS3 || setupSecrets}
-        className="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {setupS3 ? "Creating S3 Bucket..." : "Create S3 Bucket"}
-      </button>
-
-      <button
-        onClick={handleSetupSecrets}
-        disabled={loading || deployingRDS || setupS3 || setupSecrets}
-        className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        {setupSecrets ? "Storing Secrets..." : "Store Secrets"}
-      </button>
-    </div>
+        <div
+          className="mx-auto mb-1.5 flex h-8 w-8 items-center justify-center rounded-md border border-white/40 bg-white/20 text-[11px] font-bold"
+          style={{ boxShadow: `0 0 0 1px ${data.color}55, 0 8px 18px ${data.color}35` }}
+        >
+          <Image src={data.iconSrc} alt={data.label} width={24} height={24} className="h-6 w-6 object-contain" />
+        </div>
+        <p className="text-center text-xs font-semibold leading-tight">{data.label}</p>
+      </div>
+      <Handle type="source" position={Position.Bottom} className="!h-2 !w-2 !border !border-white/40 !bg-white/80" />
+    </>
   );
 }
 
+const nodeTypes = {
+  awsNode: AwsNode,
+};
+
+const initialNodes: Node<AwsNodeData>[] = [
+  {
+    id: '1',
+    type: 'awsNode',
+    position: { x: 120, y: 160 },
+    data: { label: 'ALB Load Balancer', color: '#8c50ff', icon: 'ALB', iconSrc: '/aws-alb.png' },
+  },
+  {
+    id: '2',
+    type: 'awsNode',
+    position: { x: 380, y: 160 },
+    data: { label: 'EC2 Instance', color: '#ed820b', icon: 'EC2', iconSrc: '/aws-ec2.png' },
+  },
+];
+const initialEdges: Edge[] = [];
+ 
+export default function Home() {
+  const [nodes, setNodes] = useState<Node<AwsNodeData>[]>(initialNodes);
+  const [edges, setEdges] = useState<Edge[]>(initialEdges);
+
+  const onNodesChange: OnNodesChange<Node<AwsNodeData>> = useCallback(
+    (changes: NodeChange<Node<AwsNodeData>>[]) => setNodes((nds) => applyNodeChanges(changes, nds)),
+    []
+  );
+  const onEdgesChange: OnEdgesChange<Edge> = useCallback(
+    (changes: EdgeChange<Edge>[]) => setEdges((eds) => applyEdgeChanges(changes, eds)),
+    []
+  );
+  const onConnect: OnConnect = useCallback(
+    (params: Connection) => setEdges((eds) => addEdge(params, eds)),
+    []
+  );
+
+  const getMiniMapNodeColor = useCallback((node: Node) => {
+    const nodeData = node.data as Partial<AwsNodeData> | undefined;
+    return nodeData?.color ?? '#64748b';
+  }, []);
+
+  const onAddNode = useCallback((label: string, color: string, icon: string, iconSrc: string) => {
+    let newNodeId = '';
+
+    setNodes((currentNodes) => {
+      const nodeIndex = currentNodes.length + 1;
+      newNodeId = `${nodeIndex}`;
+
+      const newNode: Node<AwsNodeData> = {
+        id: newNodeId,
+        type: 'awsNode',
+        position: {
+          x: 100 + ((nodeIndex - 1) % 3) * 220,
+          y: 160 + Math.floor((nodeIndex - 1) / 3) * 170,
+        },
+        data: { label, color, icon, iconSrc },
+      };
+
+      return [...currentNodes, newNode];
+    });
+  }, []);
+
+  return (
+    <div
+      style={{
+        width: '100vw',
+        height: '100vh',
+        backgroundColor: '#0b1220',
+      }}
+    >
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        nodeTypes={nodeTypes}
+        fitView
+      >
+        <Background color="#64748b" gap={28} size={1} />
+        <Panel position="top-center">
+          <Nodes onAddNode={onAddNode} />
+        </Panel>
+        <MiniMap
+          className="!rounded-xl !border !border-white/30 !bg-white/10 !backdrop-blur-xl"
+          nodeColor={getMiniMapNodeColor}
+          nodeStrokeColor={getMiniMapNodeColor}
+        />
+        <Controls className="!rounded-xl !border !border-white/30 !bg-white/10 !backdrop-blur-xl !shadow-[0_8px_24px_rgba(0,0,0,0.35)]" />
+      </ReactFlow>
+    </div>
+  );
+}

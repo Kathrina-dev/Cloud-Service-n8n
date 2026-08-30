@@ -5,22 +5,49 @@
   --foreground: #171717;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+.react-flow__controls-button svg {
+  fill: #f8fafc !important;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+.react-flow__controls-button {
+  background: rgba(255, 255, 255, 0.12) !important;
+  border: 1px solid rgba(255, 255, 255, 0.28) !important;
+  border-bottom: none !important;
+  backdrop-filter: blur(14px);
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+.react-flow__controls-button:last-child {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.28) !important;
+}
+
+.react-flow__controls-button:hover {
+  background: rgba(255, 255, 255, 0.2) !important;
+}
+
+.react-flow__minimap {
+  background: rgba(255, 255, 255, 0.08) !important;
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+}
+
+.react-flow__minimap-mask {
+  fill: rgba(15, 23, 42, 0.45) !important;
+}
+
+.react-flow__node-default {
+  background: #1a1b23 !important;
+  color: #ffffff !important;
+  border: 1px solid #2e303e !important;
+  border-radius: 8px !important;
+  padding: 10px 14px !important;
+  font-weight: 500 !important;
+}
+
+.react-flow__panel {
+  margin-top: 12px;
+}
+
+.react-flow__edge-path {
+  stroke: #4c4f69 !important;
+  stroke-width: 2.5 !important;
 }

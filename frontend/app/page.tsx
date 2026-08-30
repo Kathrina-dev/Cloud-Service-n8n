@@ -1,8 +1,123 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from 'react';
+import Image from 'next/image';
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  MiniMap,
+  applyNodeChanges,
+  applyEdgeChanges,
+  Panel,
+  addEdge,
+  Handle,
+  Connection,
+  EdgeChange,
+  NodeChange,
+  OnNodesChange,
+  OnEdgesChange,
+  OnConnect,
+  NodeProps,
+  Node,
+  Edge,
+  Position,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
+import './globals.css';
+import Nodes from '../components/nodes';
+import ExpandableServiceNode, { type ExpandableServiceNodeData } from '../components/ui/expandable-service-node';
+import {
+  type FlowNodeData,
+  type AwsNodeData,
+  type VpcNodeData,
+  albSections,
+  ec2Sections,
+  getSectionsForNode,
+} from '../components/node-templates';
 
+function AwsNode({ data }: NodeProps<Node<AwsNodeData>>) {
+  return (
+    <>
+      <Handle type="target" position={Position.Top} className="!h-2 !w-2 !border !border-white/40 !bg-white/80" />
+      <div
+        className="min-w-[150px] rounded-2xl border border-white/30 bg-white/10 px-3 py-2 text-white backdrop-blur-xl shadow-[0_12px_28px_rgba(0,0,0,0.35)]"
+        style={{ boxShadow: `inset 0 0 0 1px ${data.color}55, 0 12px 28px ${data.color}35` }}
+      >
+        <div
+          className="mx-auto mb-1.5 flex h-8 w-8 items-center justify-center rounded-md border border-white/40 bg-white/20 text-[11px] font-bold"
+          style={{ boxShadow: `0 0 0 1px ${data.color}55, 0 8px 18px ${data.color}35` }}
+        >
+          <Image src={data.iconSrc} alt={data.label} width={24} height={24} className="h-6 w-6 object-contain" />
+        </div>
+        <p className="text-center text-xs font-semibold leading-tight">{data.label}</p>
+      </div>
+      <Handle type="source" position={Position.Bottom} className="!h-2 !w-2 !border !border-white/40 !bg-white/80" />
+    </>
+  );
+}
+
+function VpcNode({ data }: NodeProps<Node<VpcNodeData>>) {
+  return (
+    <div
+      className="h-full w-full min-w-[420px] min-h-[260px] rounded-3xl border-2 border-dashed bg-white/5 p-4 text-white backdrop-blur-sm shadow-[0_12px_28px_rgba(0,0,0,0.15)]"
+      style={{
+        borderColor: data.accentColor,
+        boxShadow: `inset 0 0 0 1px ${data.accentColor}33, 0 12px 28px ${data.accentColor}15`
+      }}
+    >
+      <div className="flex items-center gap-3 border-b border-white/10 pb-3 mb-3">
+        <div
+          className="flex h-8 w-8 items-center justify-center rounded-md border border-white/40 bg-white/20"
+          style={{ boxShadow: `0 0 0 1px ${data.accentColor}55, 0 8px 18px ${data.accentColor}35` }}
+        >
+          <Image src={data.iconSrc} alt={data.label} width={20} height={20} className="h-5 w-5 object-contain" />
+        </div>
+        <div>
+          <p className="text-sm font-bold leading-none">{data.label}</p>
+          <p className="text-[10px] text-white/60 mt-1">CIDR: 10.0.0.0/16 | Subnets: 10.0.1.0/24, 10.0.2.0/24</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const nodeTypes = {
+  awsNode: AwsNode,
+  ec2Node: ExpandableServiceNode,
+  expandableNode: ExpandableServiceNode,
+  vpcNode: VpcNode,
+};
+
+const initialNodes: Node<FlowNodeData>[] = [
+  {
+    id: '1',
+    type: 'expandableNode',
+    position: { x: 120, y: 160 },
+    data: {
+      label: 'ALB Load Balancer',
+      iconSrc: '/aws-alb.png',
+      accentColor: '#8c50ff',
+      sections: albSections,
+    },
+  },
+  {
+    id: '2',
+    type: 'expandableNode',
+    position: { x: 380, y: 160 },
+    data: {
+      label: 'EC2 Instance',
+      iconSrc: '/aws-ec2.png',
+      accentColor: '#ed820b',
+      sections: ec2Sections,
+    },
+  },
+];
+const initialEdges: Edge[] = [];
+ 
 export default function Home() {
+  const [nodes, setNodes] = useState<Node<FlowNodeData>[]>(initialNodes);
+  const [edges, setEdges] = useState<Edge[]>(initialEdges);
   const [loading, setLoading] = useState(false);
   const [pushing, setPushing] = useState(false);
   const [deployingRDS, setDeployingRDS] = useState(false);
@@ -29,7 +144,6 @@ export default function Home() {
           "Content-Type": "application/json",
         },
       });
-
       const data = await response.json();
 
       if (!response.ok) {
@@ -46,74 +160,56 @@ export default function Home() {
     }
   };
 
-  const handleDeployRDS = async () => {
-    setDeployingRDS(true);
-    try {
-      const response = await fetch("/api/deploy-rds", {
-        method: "POST",
-      });
+  const onNodesChange: OnNodesChange<Node<FlowNodeData>> = useCallback(
+    (changes: NodeChange<Node<FlowNodeData>>[]) => setNodes((nds) => applyNodeChanges(changes, nds)),
+    []
+  );
+  const onEdgesChange: OnEdgesChange<Edge> = useCallback(
+    (changes: EdgeChange<Edge>[]) => setEdges((eds) => applyEdgeChanges(changes, eds)),
+    []
+  );
+  const onConnect: OnConnect = useCallback(
+    (params: Connection) => setEdges((eds) => addEdge(params, eds)),
+    []
+  );
 
-      const data = await response.json();
+  const getMiniMapNodeColor = useCallback((node: Node) => {
+    const nodeData = node.data as Partial<AwsNodeData & ExpandableServiceNodeData> | undefined;
+    return nodeData?.color ?? nodeData?.accentColor ?? '#64748b';
+  }, []);
 
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to deploy RDS instance");
-      }
+  const onAddNode = useCallback((label: string, color: string, icon: string, iconSrc: string, nodeType: string) => {
+    let newNodeId = '';
 
-      alert(`RDS instance is being provisioned! DB Identifier: ${data.dbInstanceIdentifier}`);
-    } catch (error: unknown) {
-      const errorMessage =
-        error instanceof Error ? error.message : "An unknown error occurred";
-      alert(`RDS Deployment failed: ${errorMessage}`);
-    } finally {
-      setDeployingRDS(false);
-    }
-  };
+    setNodes((currentNodes) => {
+      const nodeIndex = currentNodes.length + 1;
+      newNodeId = `${nodeIndex}`;
 
-  const handleSetupS3 = async () => {
-    setSetupS3(true);
-    try {
-      const response = await fetch("/api/setup-s3", {
-        method: "POST",
-      });
+      const newNode: Node<FlowNodeData> = {
+        id: newNodeId,
+        type: nodeType,
+        position: {
+          x: 100 + ((nodeIndex - 1) % 3) * 220,
+          y: 160 + Math.floor((nodeIndex - 1) / 3) * 170,
+        },
+        data:
+          nodeType === 'vpcNode'
+            ? {
+                label,
+                iconSrc,
+                accentColor: color,
+              }
+            : {
+                label,
+                iconSrc,
+                accentColor: color,
+                sections: getSectionsForNode(label),
+              },
+      };
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to create S3 bucket");
-      }
-
-      alert(`S3 bucket created successfully! Bucket Name: ${data.bucketName}`);
-    } catch (error: unknown) {
-      const errorMessage =
-        error instanceof Error ? error.message : "An unknown error occurred";
-      alert(`S3 Setup failed: ${errorMessage}`);
-    } finally {
-      setSetupS3(false);
-    }
-  };
-
-  const handleSetupSecrets = async () => {
-    setSetupSecrets(true);
-    try {
-      const response = await fetch("/api/setup-secrets", {
-        method: "POST",
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Failed to manage secrets");
-      }
-
-      alert(`Secrets stored successfully! Secret Name: ${data.secretName}`);
-    } catch (error: unknown) {
-      const errorMessage =
-        error instanceof Error ? error.message : "An unknown error occurred";
-      alert(`Secrets Setup failed: ${errorMessage}`);
-    } finally {
-      setSetupSecrets(false);
-    }
-  };
+      return [...currentNodes, newNode];
+    });
+  }, []);
 
   const handleRequestCertificate = async () => {
     if (!domainName) {
@@ -187,107 +283,52 @@ export default function Home() {
   const isBusy = loading || pushing || deployingRDS || setupS3 || setupSecrets || requestingCert || setupCW;
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen gap-6 p-4">
-      <div className="flex flex-col gap-4 w-full max-w-md border p-6 rounded shadow">
-        <h2 className="text-xl font-bold text-center mb-4">Control Panel</h2>
-        <button
-          onClick={handleDeploy}
-          disabled={isBusy}
-          className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {loading ? "Deploying..." : "Deploy EC2"}
-        </button>
-        
-        <button
-          onClick={handleDeployRDS}
-          disabled={isBusy}
-          className="bg-purple-500 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {deployingRDS ? "Deploying RDS..." : "Deploy RDS"}
-        </button>
-
-        <button
-          onClick={handleSetupS3}
-          disabled={isBusy}
-          className="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {setupS3 ? "Creating S3 Bucket..." : "Create S3 Bucket"}
-        </button>
-
-        <button
-          onClick={handleSetupSecrets}
-          disabled={isBusy}
-          className="bg-red-500 hover:bg-red-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {setupSecrets ? "Storing Secrets..." : "Store Secrets"}
-        </button>
-      </div>
-
-      <div className="flex flex-col gap-4 w-full max-w-md border p-6 rounded shadow mt-4">
-        <h2 className="text-xl font-bold text-center mb-4">SSL & Domain</h2>
-        <input 
-          type="text" 
-          placeholder="e.g., n8n.mycompany.com" 
-          value={domainName}
-          onChange={(e) => setDomainName(e.target.value)}
-          disabled={isBusy}
-          className="border p-2 rounded text-black bg-white"
+    <div
+      style={{
+        width: '100vw',
+        height: '100vh',
+        backgroundColor: '#0b1220',
+      }}
+    >
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        onConnect={onConnect}
+        nodeTypes={nodeTypes}
+        fitView
+      >
+        <Background color="#64748b" gap={28} size={1} />
+        <Panel position="top-center">
+          <Nodes onAddNode={onAddNode} />
+        </Panel>
+        <Panel position="top-right">
+          <button
+            onClick={handleDeploy}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-white/20 bg-white/10 hover:bg-white/20 active:bg-white/30 text-white font-semibold text-sm backdrop-blur-xl shadow-[0_8px_24px_rgba(0,0,0,0.35)] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? (
+              <>
+                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                Deploying...
+              </>
+            ) : (
+              'Deploy EC2'
+            )}
+          </button>
+        </Panel>
+        <MiniMap
+          className="!rounded-xl !border !border-white/30 !bg-white/10 !backdrop-blur-xl"
+          nodeColor={getMiniMapNodeColor}
+          nodeStrokeColor={getMiniMapNodeColor}
         />
-        <button
-          onClick={handleRequestCertificate}
-          disabled={isBusy || !domainName}
-          className="bg-indigo-500 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {requestingCert ? "Requesting Certificate..." : "Request SSL Certificate"}
-        </button>
-        
-        {dnsInstructions && (
-          <div className="mt-4 p-4 bg-gray-100 border border-gray-300 rounded text-sm text-black">
-            <h3 className="font-bold mb-2">Action Required: DNS Validation</h3>
-            <p className="mb-4">Please add the following CNAME record to your domain&apos;s DNS settings (e.g., in Route53, GoDaddy, Cloudflare) to prove ownership.</p>
-            <div className="flex flex-col gap-2 font-mono break-all">
-              <div><span className="font-bold">Type:</span> {dnsInstructions.type}</div>
-              <div><span className="font-bold">Name:</span> {dnsInstructions.name}</div>
-              <div><span className="font-bold">Value:</span> {dnsInstructions.value}</div>
-      <div className="flex flex-col gap-4 w-full max-w-md border p-6 rounded shadow mt-4">
-        <h2 className="text-xl font-bold text-center mb-4">CloudWatch Monitoring</h2>
-        <input 
-          type="text" 
-          placeholder="EC2 Instance ID (e.g., i-0abcd1234efgh5678)" 
-          value={cwParams.ec2InstanceId}
-          onChange={(e) => setCwParams({...cwParams, ec2InstanceId: e.target.value})}
-          disabled={isBusy}
-          className="border p-2 rounded text-black"
-        />
-        <input 
-          type="text" 
-          placeholder="RDS DB Identifier (e.g., n8n-db-prod)" 
-          value={cwParams.rdsIdentifier}
-          onChange={(e) => setCwParams({...cwParams, rdsIdentifier: e.target.value})}
-          disabled={isBusy}
-          className="border p-2 rounded text-black"
-        />
-        <input 
-          type="text" 
-          placeholder="ALB Full Name (e.g., app/my-alb/1234abcd)" 
-          value={cwParams.loadBalancerFullName}
-          onChange={(e) => setCwParams({...cwParams, loadBalancerFullName: e.target.value})}
-          disabled={isBusy}
-          className="border p-2 rounded text-black"
-        />
-        <button
-          onClick={handleSetupCloudWatch}
-          disabled={isBusy || !cwParams.ec2InstanceId || !cwParams.rdsIdentifier || !cwParams.loadBalancerFullName}
-          className="bg-teal-500 hover:bg-teal-700 text-white font-bold py-2 px-4 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {setupCW ? "Configuring CloudWatch..." : "Setup CloudWatch Monitoring"}
-        </button>
-      </div>
-    </div>
-            <p className="mt-4 text-xs italic">Note: AWS will issue the certificate automatically once DNS validation succeeds. This can take up to 30 minutes after adding the record.</p>
-          </div>
-        )}
-      </div>
+        <Controls className="!rounded-xl !border !border-white/30 !bg-white/10 !backdrop-blur-xl !shadow-[0_8px_24px_rgba(0,0,0,0.35)]" />
+      </ReactFlow>
     </div>
   );
 }

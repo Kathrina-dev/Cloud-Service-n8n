@@ -1,6 +1,6 @@
 # Cloud-n8n-Service
 
-> Automated, versioned deployment of n8n workflows from local development to AWS production.
+> Automated, versioned deployment of n8n-like workflows from local development to AWS production.
 
 ## 1. Problem Statement
 

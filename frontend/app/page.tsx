@@ -26,13 +26,15 @@ import {
 import '@xyflow/react/dist/style.css';
 import './globals.css';
 import Nodes from '../components/nodes';
-
-type AwsNodeData = {
-  label: string;
-  color: string;
-  icon: string;
-  iconSrc: string;
-};
+import ExpandableServiceNode, { type ExpandableServiceNodeData } from '../components/ui/expandable-service-node';
+import {
+  type FlowNodeData,
+  type AwsNodeData,
+  type VpcNodeData,
+  albSections,
+  ec2Sections,
+  getSectionsForNode,
+} from '../components/node-templates';
 
 function AwsNode({ data }: NodeProps<Node<AwsNodeData>>) {
   return (
@@ -55,32 +57,96 @@ function AwsNode({ data }: NodeProps<Node<AwsNodeData>>) {
   );
 }
 
+function VpcNode({ data }: NodeProps<Node<VpcNodeData>>) {
+  return (
+    <div
+      className="h-full w-full min-w-[420px] min-h-[260px] rounded-3xl border-2 border-dashed bg-white/5 p-4 text-white backdrop-blur-sm shadow-[0_12px_28px_rgba(0,0,0,0.15)]"
+      style={{
+        borderColor: data.accentColor,
+        boxShadow: `inset 0 0 0 1px ${data.accentColor}33, 0 12px 28px ${data.accentColor}15`
+      }}
+    >
+      <div className="flex items-center gap-3 border-b border-white/10 pb-3 mb-3">
+        <div
+          className="flex h-8 w-8 items-center justify-center rounded-md border border-white/40 bg-white/20"
+          style={{ boxShadow: `0 0 0 1px ${data.accentColor}55, 0 8px 18px ${data.accentColor}35` }}
+        >
+          <Image src={data.iconSrc} alt={data.label} width={20} height={20} className="h-5 w-5 object-contain" />
+        </div>
+        <div>
+          <p className="text-sm font-bold leading-none">{data.label}</p>
+          <p className="text-[10px] text-white/60 mt-1">CIDR: 10.0.0.0/16 | Subnets: 10.0.1.0/24, 10.0.2.0/24</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const nodeTypes = {
   awsNode: AwsNode,
+  ec2Node: ExpandableServiceNode,
+  expandableNode: ExpandableServiceNode,
+  vpcNode: VpcNode,
 };
 
-const initialNodes: Node<AwsNodeData>[] = [
+const initialNodes: Node<FlowNodeData>[] = [
   {
     id: '1',
-    type: 'awsNode',
+    type: 'expandableNode',
     position: { x: 120, y: 160 },
-    data: { label: 'ALB Load Balancer', color: '#8c50ff', icon: 'ALB', iconSrc: '/aws-alb.png' },
+    data: {
+      label: 'ALB Load Balancer',
+      iconSrc: '/aws-alb.png',
+      accentColor: '#8c50ff',
+      sections: albSections,
+    },
   },
   {
     id: '2',
-    type: 'awsNode',
+    type: 'expandableNode',
     position: { x: 380, y: 160 },
-    data: { label: 'EC2 Instance', color: '#ed820b', icon: 'EC2', iconSrc: '/aws-ec2.png' },
+    data: {
+      label: 'EC2 Instance',
+      iconSrc: '/aws-ec2.png',
+      accentColor: '#ed820b',
+      sections: ec2Sections,
+    },
   },
 ];
 const initialEdges: Edge[] = [];
  
 export default function Home() {
-  const [nodes, setNodes] = useState<Node<AwsNodeData>[]>(initialNodes);
+  const [nodes, setNodes] = useState<Node<FlowNodeData>[]>(initialNodes);
   const [edges, setEdges] = useState<Edge[]>(initialEdges);
+  const [loading, setLoading] = useState(false);
 
-  const onNodesChange: OnNodesChange<Node<AwsNodeData>> = useCallback(
-    (changes: NodeChange<Node<AwsNodeData>>[]) => setNodes((nds) => applyNodeChanges(changes, nds)),
+  const handleDeploy = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch("/api/deploy-poc", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to deploy instance");
+      }
+
+      alert(`EC2 Instance deployed successfully! Instance ID: ${data.instanceId}`);
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : "An unknown error occurred";
+      alert(`Deployment failed: ${errorMessage}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onNodesChange: OnNodesChange<Node<FlowNodeData>> = useCallback(
+    (changes: NodeChange<Node<FlowNodeData>>[]) => setNodes((nds) => applyNodeChanges(changes, nds)),
     []
   );
   const onEdgesChange: OnEdgesChange<Edge> = useCallback(
@@ -93,25 +159,37 @@ export default function Home() {
   );
 
   const getMiniMapNodeColor = useCallback((node: Node) => {
-    const nodeData = node.data as Partial<AwsNodeData> | undefined;
-    return nodeData?.color ?? '#64748b';
+    const nodeData = node.data as Partial<AwsNodeData & ExpandableServiceNodeData> | undefined;
+    return nodeData?.color ?? nodeData?.accentColor ?? '#64748b';
   }, []);
 
-  const onAddNode = useCallback((label: string, color: string, icon: string, iconSrc: string) => {
+  const onAddNode = useCallback((label: string, color: string, icon: string, iconSrc: string, nodeType: string) => {
     let newNodeId = '';
 
     setNodes((currentNodes) => {
       const nodeIndex = currentNodes.length + 1;
       newNodeId = `${nodeIndex}`;
 
-      const newNode: Node<AwsNodeData> = {
+      const newNode: Node<FlowNodeData> = {
         id: newNodeId,
-        type: 'awsNode',
+        type: nodeType,
         position: {
           x: 100 + ((nodeIndex - 1) % 3) * 220,
           y: 160 + Math.floor((nodeIndex - 1) / 3) * 170,
         },
-        data: { label, color, icon, iconSrc },
+        data:
+          nodeType === 'vpcNode'
+            ? {
+                label,
+                iconSrc,
+                accentColor: color,
+              }
+            : {
+                label,
+                iconSrc,
+                accentColor: color,
+                sections: getSectionsForNode(label),
+              },
       };
 
       return [...currentNodes, newNode];
@@ -138,6 +216,25 @@ export default function Home() {
         <Background color="#64748b" gap={28} size={1} />
         <Panel position="top-center">
           <Nodes onAddNode={onAddNode} />
+        </Panel>
+        <Panel position="top-right">
+          <button
+            onClick={handleDeploy}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-white/20 bg-white/10 hover:bg-white/20 active:bg-white/30 text-white font-semibold text-sm backdrop-blur-xl shadow-[0_8px_24px_rgba(0,0,0,0.35)] transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? (
+              <>
+                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                Deploying...
+              </>
+            ) : (
+              'Deploy EC2'
+            )}
+          </button>
         </Panel>
         <MiniMap
           className="!rounded-xl !border !border-white/30 !bg-white/10 !backdrop-blur-xl"

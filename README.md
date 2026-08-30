@@ -1,144 +1,77 @@
-# Cloud-n8n-Service
+# 🏗️ AI Cloud Architect Canvas 
 
-> Automated, versioned deployment of n8n-like workflows from local development to AWS production.
+> **A Next.js application that lets you design AWS cloud architectures visually using a drag-and-drop canvas (or AI text prompts) and deploy them directly to your live AWS account in one click.**
 
-## 1. Problem Statement
-
-Deploying n8n workflows from development to production reliably requires more than exporting a workflow JSON file.
-
-A production deployment needs:
-
-- Infrastructure provisioning
-- Container deployment
-- Database configuration
-- Secret management
-- IAM permissions
-- Workflow versioning
-- Health verification
-- Rollback support
-
-Manually configuring these components is error-prone, difficult to reproduce, and slow to maintain.
-
-Cloud-n8n-Service provides a controlled development-to-production pipeline that automates this process.
+Built with ❤️ for **BuildSprint**.
 
 ---
 
-## 2. Solution
+## ✨ Features
 
-Cloud-n8n-Service allows developers to:
+- **🎨 Visual Drag-and-Drop Canvas**: Easily drag AWS services (VPC, EC2, ALB, RDS, S3, etc.) onto the canvas. Group your resources dynamically by dragging EC2 instances inside a VPC's Public or Private Subnets!
+- **🤖 Text-to-Graph AI (Powered by Gemini 3.6 Flash)**: Don't want to drag nodes? Just type *"Add an EC2 instance connected to an RDS database"* and our AI will automatically parse your prompt, generate the components, and snap them perfectly onto your canvas.
+- **🚀 One-Click AWS Orchestrator**: Once you are happy with your architecture, click **Deploy**. The backend orchestrator reads the canvas topology and asynchronously provisions real infrastructure into your AWS account using the AWS SDK!
+  - Creates VPCs, Public/Private Subnets, Internet Gateways, and Route Tables.
+  - Launches EC2 instances.
+  - Provisions RDS PostgreSQL Databases and highly-secure S3 buckets.
 
-1. Build and test an n8n workflow locally.
-2. Export and version the workflow using Git.
-3. Generate production infrastructure configuration using LatentCode.
-4. Deploy the generated infrastructure to AWS.
-5. Deploy and activate the workflow in a production n8n instance.
-6. Verify the deployment through health checks.
-7. Monitor the deployment using CloudWatch.
-8. Roll back to a previous Git-committed workflow version if required.
+## 🛠️ Tech Stack
 
-### Core Flow
+- **Frontend Framework**: [Next.js](https://nextjs.org/) (App Router, React 18)
+- **Styling**: Tailwind CSS & Glassmorphism UI
+- **Canvas Engine**: [React Flow (@xyflow/react)](https://reactflow.dev/)
+- **AI Integration**: Google Gemini (`gemini-3.6-flash` via `@google/genai`)
+- **Cloud Provider SDK**: AWS SDK v3 for JavaScript/TypeScript
 
-```text
-Local Development
-       │
-       │ n8n Workflow
-       ▼
-Docker Compose
-(n8n + PostgreSQL)
-       │
-       │ Export + Commit
-       ▼
-      Git
-       │
-       │ Promote to Production
-       ▼
-   FastAPI
- Control Plane
-       │
-       ├──────────────► LatentCode
-       │                 │
-       │                 ▼
-       │              IaC Generation
-       │
-       └──────────────► AWS Deployment
-                         │
-                         ▼
-                  AWS Production
-                  ┌──────────────┐
-                  │     ECS      │
-                  │     n8n      │
-                  ├──────────────┤
-                  │ RDS PostgreSQL│
-                  │ ECR          │
-                  │ Secrets Mgr  │
-                  │ IAM          │
-                  │ CloudWatch   │
-                  └──────────────┘
-```
+---
 
-## 3. Development vs Production
+## 🚀 Getting Started
 
-Cloud-n8n-Service intentionally uses different infrastructure for development and production to maximize local speed and cloud resilience.
-
-| Environment | Infrastructure | Purpose |
-| --- | --- | --- |
-| **Development** | Docker Compose (`n8n` + `PostgreSQL`) | Build and test workflows locally |
-| **Production** | AWS (`ECS` + `RDS` + `ECR` + `Secrets Manager` + `IAM` + `CloudWatch`) | Run validated workflows in the cloud |
-
-### Development
-
-Development runs entirely on the developer's machine via Docker Compose. This keeps development fast and avoids unnecessary AWS infrastructure and costs during workflow creation and testing.
-
-### Production
-
-The production environment is created, provisioned, and managed entirely through the Cloud-n8n-Service deployment pipeline on AWS.
-
-## 4. Promotion Workflow
-
-1. Build workflow locally
-2. Test workflow
-3. Export workflow JSON
-4. Commit version to Git
-5. Click "Promote to Production"
-6. FastAPI receives promotion request
-7. LatentCode generates IaC
-8. Cloud-n8n-Service applies IaC
-9. AWS ECS deployment starts
-10. Production n8n imports workflow
-11. Workflow is activated
-12. Health check runs
-13. CloudWatch monitoring
-14. Deployment marked successful
-
-## 5. Rollback
-
-Every workflow version is stored in Git. If a production deployment fails, Cloud-n8n-Service can cleanly redeploy a previously committed version without manually reconstructing the production environment.
-
-## 6. System Architecture
-
-**Frontend (Next.js)**
-
-* Workflow deployment dashboard
-* Production status & Health
-* Version selection & Rollback
-
-**Backend (Python + FastAPI)**
-
-* Deployment orchestration & AWS integration (Boto3/Terraform)
-* LatentCode integration
-* n8n API integration
-
-## 7. Local Development Prerequisites
-
-* Docker & Docker Compose
-* Python 3.11+
-* Node.js 20+
-* Git
-* AWS CLI & Terraform
-* AWS account
-
-Start n8n locally:
-
+### 1. Clone the repository
 ```bash
-docker compose -f docker/docker-compose.yml up -d
+git clone https://github.com/Kathrina-dev/Cloud-Service-n8n.git
+cd Cloud-Service-n8n/frontend
 ```
+
+### 2. Install Dependencies
+```bash
+npm install
+```
+
+### 3. Environment Variables
+Create a `.env` file in the `frontend` directory and configure the following keys:
+
+```ini
+# AWS Credentials (Ensure your IAM user has permissions for VPC, EC2, RDS, and S3)
+AWS_ACCESS_KEY_ID=your_access_key
+AWS_SECRET_ACCESS_KEY=your_secret_key
+AWS_SESSION_TOKEN=your_session_token # (Optional: Only if using AWS Learner Labs)
+AWS_REGION=us-east-1
+
+# RDS Database Setup
+AWS_RDS_DB_NAME=n8ndb
+AWS_RDS_USERNAME=postgres
+AWS_RDS_PASSWORD=your_secure_password
+
+# AI Integration
+GEMINI_API_KEY=your_gemini_api_key
+```
+
+### 4. Run the Development Server
+```bash
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000) in your browser to start architecting!
+
+---
+
+## 🏗️ How the Orchestrator Works
+
+When you click **Deploy**, the React application maps your 2D canvas nodes into an infrastructure graph. 
+
+1. **VPC Layer**: If a VPC node is present, it provisions an AWS VPC with public and private subnets.
+2. **Compute Layer**: Scans the private subnet area and provisions EC2 instances (`t2.micro`).
+3. **Database & Storage Layer**: Identifies RDS and S3 nodes and triggers asynchronous provisioning of `db.t3.micro` Postgres instances and strictly private S3 buckets.
+
+*All status updates stream directly back to the UI in real-time, giving you complete visibility into the infrastructure-as-code deployment!*
